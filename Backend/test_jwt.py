@@ -2,7 +2,8 @@ import requests
 
 url = "http://127.0.0.1:8000/api/token/"
 payload = {
-    "username": "vamsi_a",
+    "username": "Vamsi",  
+    "Email address": "Team123@gmail.com",
     "password": "Luffy@123"
 }
 headers = {
