@@ -17,11 +17,16 @@ class Doctor(models.Model):
         return self.name
 
 class Appointment(models.Model):
+    STATUS_CHOICES = (
+        ('Booked', 'Booked'),
+        ('Cancelled', 'Cancelled'),
+    )
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE)
     doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE)
     date = models.DateField()
     time = models.TimeField()
     notes = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Booked')
 
     def __str__(self):
         return f"{self.patient.name} with {self.doctor.name} on {self.date} at {self.time}"

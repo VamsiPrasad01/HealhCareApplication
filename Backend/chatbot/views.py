@@ -1,32 +1,60 @@
-# chatbot/views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny  # Use IsAuthenticated for protected access
-import openai
+from rest_framework.permissions import IsAuthenticated
+from django.core.cache import cache
+import requests
 from decouple import config
 
-# Load OpenAI key from .env
-openai.api_key = config("OPENAI_API_KEY")
+     class ChatbotResponse(APIView):
+         permission_classes = [IsAuthenticated]
 
-class ChatbotResponse(APIView):
-    permission_classes = [AllowAny]  # Or use [IsAuthenticated] if needed
+         def post(self, request):
+             message = request.data.get("message")
+             if not message:
+                 return Response({"error": "Message is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-    def post(self, request):
-        message = request.data.get("message")
-        if not message:
-            return Response({"error": "Message is required"}, status=status.HTTP_400_BAD_REQUEST)
+             if len(message) > 1000:
+                 return Response({"error": "Message too long"}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            # Send message to OpenAI
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a helpful healthcare assistant."},
-                    {"role": "user", "content": message},
-                ]
-            )
-            reply = response.choices[0]["message"]["content"]
-            return Response({"reply": reply}, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+             cache_key = f"chatbot_response_{hash(message)}"
+             cached_response = cache.get(cache_key)
+             if cached_response:
+                 return Response({"reply": cached_response, "cached": True})
+
+             try:
+                 response = requests.post(
+                     'https://api.x.ai/v1/chat/completions',
+                     headers={
+                         'Authorization': f'Bearer {config("XAI_API_KEY")}',
+                         'Content-Type': 'application/json',
+                     },
+                     json={
+                         'model': 'grok-3',
+                         'messages': [
+                             {
+                                 'role': 'system',
+                                 'content': (
+                                     'You are Grok, a healthcare assistant created by xAI. '
+                                     'Provide general information and clarify that you are not a doctor. '
+                                     'Encourage users to consult a healthcare professional for medical advice.'
+                                 ),
+                             },
+                             {'role': 'user', 'content': message},
+                         ],
+                         'max_tokens': 500,
+                         'temperature': 0.7,
+                     },
+                     timeout=10
+                 )
+                 response.raise_for_status()
+                 reply = response.json()['choices'][0]['message']['content']
+                 cache.set(cache_key, reply, timeout=3600)
+                 return Response({
+                     'reply': reply,
+                     'disclaimer': 'This is not medical advice. Consult a healthcare professional.'
+                 })
+             except requests.exceptions.HTTPError as e:
+                 return Response({"error": f"xAI API error: {str(e)}"}, status=status.HTTP_502_BAD_GATEWAY)
+             except requests.exceptions.RequestException as e:
+                 return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
